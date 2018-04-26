@@ -5,6 +5,8 @@ import android.content.res.Resources
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.support.annotation.ColorInt
+import android.support.v4.content.ContextCompat
+import android.support.v4.view.ViewCompat
 import android.support.v4.view.ViewPager
 import android.support.v7.widget.LinearLayoutManager
 import android.support.v7.widget.RecyclerView
@@ -39,11 +41,13 @@ class IndefinitePagerIndicator @JvmOverloads constructor(context: Context, attrs
     private var selectedDotRadiusPx = dpToPx(DEFAULT_SELECTED_DOT_RADIUS_DP, resources)
     private var dotRadiusPx = dpToPx(DEFAULT_DOT_RADIUS_DP.toFloat(), resources)
     private var dotSeparationDistancePx = dpToPx(DEFAULT_DOT_SEPARATION_DISTANCE_DP.toFloat(), resources)
+    private var supportRtl = false
 
     @ColorInt
-    private var dotColor: Int = resources.getColor(R.color.default_dot_color)
+    private var dotColor: Int = ContextCompat.getColor(this.context, R.color.default_dot_color)
     @ColorInt
-    private var selectedDotColor: Int = resources.getColor(R.color.default_selected_dot_color)
+    private var selectedDotColor: Int = ContextCompat.getColor(this.context, R.color
+            .default_selected_dot_color)
     private val selectedDotPaint = Paint()
     private val dotPaint = Paint()
 
@@ -73,12 +77,15 @@ class IndefinitePagerIndicator @JvmOverloads constructor(context: Context, attrs
             dotColor = typedArray.getColor(R.styleable.IndefinitePagerIndicator_dotColor, dotColor)
             selectedDotColor = typedArray.getColor(R.styleable.IndefinitePagerIndicator_selectedDotColor, selectedDotColor)
             dotSeparationDistancePx = typedArray.getDimensionPixelSize(R.styleable.IndefinitePagerIndicator_dotSeparation, dotSeparationDistancePx)
+            supportRtl = typedArray.getBoolean(R.styleable.IndefinitePagerIndicator_supportRTL, false)
         }
 
         selectedDotPaint.style = Paint.Style.FILL
         selectedDotPaint.color = selectedDotColor
+        selectedDotPaint.isAntiAlias = true
         dotPaint.style = Paint.Style.FILL
         dotPaint.color = dotColor
+        dotPaint.isAntiAlias = true
     }
 
     /**
@@ -220,20 +227,39 @@ class IndefinitePagerIndicator @JvmOverloads constructor(context: Context, attrs
     }
 
     /**
+     * Checks if the View is in RTL direction
+     */
+    private fun isRtl() = ViewCompat.getLayoutDirection(this) == ViewCompat.LAYOUT_DIRECTION_RTL
+
+    /**
+     * Gets the RTL position of the position in any adapter
+     */
+    private fun getRTLPosition(position: Int) = getPagerItemCount() - position - 1
+
+    /**
      * ViewPager.OnPageChangeListener implementation.
      *
      * Used to update the intermediateSelectedPosition & offsetPercent when the page is scrolled.
      * OffsetPercent multiplied by -1 to account for natural swipe movement.
      */
     override fun onPageScrolled(position: Int, positionOffset: Float, positionOffsetPixels: Int) {
-        intermediateSelectedItemPosition = position
-        offsetPercent = positionOffset * -1
+        if (supportRtl && isRtl()) {
+            intermediateSelectedItemPosition = getRTLPosition(position)
+            offsetPercent = positionOffset * 1
+        } else {
+            intermediateSelectedItemPosition = position
+            offsetPercent = positionOffset * -1
+        }
         invalidate()
     }
 
     override fun onPageSelected(position: Int) {
         intermediateSelectedItemPosition = selectedItemPosition
-        selectedItemPosition = position
+        selectedItemPosition = if (supportRtl && isRtl()) {
+            getRTLPosition(position)
+        } else {
+            position
+        }
         invalidate()
     }
 
@@ -270,12 +296,14 @@ class IndefinitePagerIndicator @JvmOverloads constructor(context: Context, attrs
                 offsetPercent = view.left.toFloat() / view.measuredWidth
             }
 
-            val layoutManager = recyclerView?.layoutManager as LinearLayoutManager
-            val visibleItemPosition = if (dx >= 0) layoutManager.findLastVisibleItemPosition() else layoutManager.findFirstVisibleItemPosition()
+            with(recyclerView?.layoutManager as LinearLayoutManager) {
+                val visibleItemPosition = if (dx >= 0) findLastVisibleItemPosition() else findFirstVisibleItemPosition()
 
-            if (previousMostVisibleChild !== layoutManager.findViewByPosition(visibleItemPosition)) {
-                selectedItemPosition = intermediateSelectedItemPosition
+                if (previousMostVisibleChild !== findViewByPosition(visibleItemPosition)) {
+                    selectedItemPosition = intermediateSelectedItemPosition
+                }
             }
+
             previousMostVisibleChild = view
             invalidate()
         }
@@ -316,7 +344,13 @@ class IndefinitePagerIndicator @JvmOverloads constructor(context: Context, attrs
         }
 
         private fun setIntermediateSelectedItemPosition(mostVisibleChild: View?) {
-            intermediateSelectedItemPosition = recyclerView?.findContainingViewHolder(mostVisibleChild)?.adapterPosition!!
+            with(recyclerView?.findContainingViewHolder(mostVisibleChild)?.adapterPosition!!) {
+                intermediateSelectedItemPosition = if (isRtl()) {
+                    getRTLPosition(this)
+                } else {
+                    this
+                }
+            }
         }
     }
 }
